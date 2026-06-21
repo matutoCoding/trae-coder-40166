@@ -1,0 +1,304 @@
+import { useState } from 'react'
+import { Upload, FileAudio, ArrowRight, Info, CheckCircle } from 'lucide-react'
+import { useProjectStore } from '../store/projectStore'
+import type { CaseInfo, RecordingFile } from '@shared/types'
+import { RECORDING_TYPE_LABELS } from '@shared/types'
+import { formatFileSize } from '@shared/utils'
+
+export default function ImportWindow() {
+  const { caseInfo, recordingFile, setCaseInfo, setRecordingFile, setCurrentStep } = useProjectStore()
+  const [dragActive, setDragActive] = useState(false)
+  const [formData, setFormData] = useState<CaseInfo>(caseInfo || {
+    caseNumber: '',
+    caseName: '',
+    recordingType: 'interview',
+    date: new Date().toISOString().split('T')[0],
+    location: '',
+    participants: ''
+  })
+
+  const handleFileSelect = async () => {
+    const result = await window.electronAPI.openAudioDialog()
+    if (!result.canceled && result.filePaths.length > 0) {
+      const filePath = result.filePaths[0]
+      const fileName = filePath.split(/[\\/]/).pop() || ''
+      const ext = fileName.split('.').pop()?.toLowerCase() || ''
+      const file: RecordingFile = {
+        path: filePath,
+        name: fileName,
+        size: 45 * 1024 * 1024,
+        duration: 3600,
+        format: ext
+      }
+      setRecordingFile(file)
+    }
+  }
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true)
+    } else if (e.type === 'dragleave') {
+      setDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0]
+      const validExts = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'wma']
+      const ext = file.name.split('.').pop()?.toLowerCase() || ''
+      if (validExts.includes(ext)) {
+        const recording: RecordingFile = {
+          path: (file as unknown as { path?: string }).path || file.name,
+          name: file.name,
+          size: file.size,
+          duration: 3600,
+          format: ext
+        }
+        setRecordingFile(recording)
+      }
+    }
+  }
+
+  const handleSubmit = () => {
+    if (!recordingFile) {
+      alert('请先导入录音文件')
+      return
+    }
+    if (!formData.caseName.trim()) {
+      alert('请填写案件名称')
+      return
+    }
+    setCaseInfo(formData)
+    setCurrentStep('diarization')
+    window.electronAPI.openWindow('diarization')
+  }
+
+  const handleInputChange = (field: keyof CaseInfo, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const canProceed = recordingFile && formData.caseName.trim()
+
+  return (
+    <div className="window-container">
+      <header className="window-header">
+        <div className="window-header-title">
+          <h1>会议取证转写工具</h1>
+          <span className="step-badge">第一步 · 录音导入</span>
+        </div>
+        <div className="window-header-actions">
+          <span style={{ fontSize: 12, opacity: 0.8 }}>v1.0.0</span>
+        </div>
+      </header>
+
+      <div className="step-indicator">
+        <div className="step-item active">
+          <div className="step-number">1</div>
+          <span>录音导入</span>
+        </div>
+        <div className="step-divider"></div>
+        <div className="step-item">
+          <div className="step-number">2</div>
+          <span>声纹分轨</span>
+        </div>
+        <div className="step-divider"></div>
+        <div className="step-item">
+          <div className="step-number">3</div>
+          <span>审阅封存</span>
+        </div>
+      </div>
+
+      <div className="window-content">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, maxWidth: 1200, margin: '0 auto' }}>
+          <div className="card">
+            <div className="card-header">
+              <h2>录音文件</h2>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>支持 MP3 / WAV / M4A / AAC / FLAC 等格式</span>
+            </div>
+            <div className="card-body">
+              {!recordingFile ? (
+                <div
+                  onDragEnter={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDragOver={handleDrag}
+                  onDrop={handleDrop}
+                  onClick={handleFileSelect}
+                  style={{
+                    border: `2px dashed ${dragActive ? 'var(--primary-light)' : 'var(--border)'}`,
+                    borderRadius: 8,
+                    padding: 48,
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    background: dragActive ? '#eff6ff' : 'transparent'
+                  }}
+                >
+                  <Upload size={48} style={{ marginBottom: 16, color: 'var(--text-muted)' }} />
+                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+                    点击或拖拽文件到此处
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    支持导入访谈、调解或内部调查的录音文件
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  padding: 16,
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 8
+                }}>
+                  <div style={{
+                    width: 48, height: 48,
+                    borderRadius: 8,
+                    background: '#166534',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'white',
+                    flexShrink: 0
+                  }}>
+                    <FileAudio size={24} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, color: '#166534' }}>
+                      {recordingFile.name}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 16 }}>
+                      <span>{formatFileSize(recordingFile.size)}</span>
+                      <span>{recordingFile.format.toUpperCase()}</span>
+                      <CheckCircle size={14} style={{ color: '#166534' }} />
+                      <span style={{ color: '#166534' }}>已导入</span>
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleFileSelect}
+                  >
+                    重新选择
+                  </button>
+                </div>
+              )}
+
+              <div style={{ marginTop: 24, padding: 16, background: '#f8fafc', borderRadius: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  <Info size={16} style={{ flexShrink: 0, color: 'var(--info)', marginTop: 1 }} />
+                  <div>
+                    <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text)' }}>录音文件要求</div>
+                    <ul style={{ paddingLeft: 18, margin: 0 }}>
+                      <li>建议使用 16kHz 以上采样率的单声道或双声道音频</li>
+                      <li>文件大小建议不超过 500MB，时长建议 4 小时以内</li>
+                      <li>请勿使用经过压缩或降噪处理的录音，以保证声纹识别准确性</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <h2>案件信息</h2>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>用于归档和导出</span>
+            </div>
+            <div className="card-body">
+              <div className="form-row">
+                <div className="form-group">
+                  <label>案件编号</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="如：CASE-2024-001"
+                    value={formData.caseNumber}
+                    onChange={e => handleInputChange('caseNumber', e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>案件名称<span className="required">*</span></label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="请输入案件名称"
+                    value={formData.caseName}
+                    onChange={e => handleInputChange('caseName', e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>录音类型</label>
+                  <select
+                    className="form-control"
+                    value={formData.recordingType}
+                    onChange={e => handleInputChange('recordingType', e.target.value)}
+                  >
+                    {Object.entries(RECORDING_TYPE_LABELS).map(([key, label]) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>会议日期</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={formData.date}
+                    onChange={e => handleInputChange('date', e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>会议地点</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="如：XX律师事务所第一会议室"
+                  value={formData.location}
+                  onChange={e => handleInputChange('location', e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>参会人员</label>
+                <textarea
+                  className="form-control"
+                  placeholder="请输入所有参会人员姓名及身份，如：张三（当事人）、李四（律师）"
+                  value={formData.participants}
+                  onChange={e => handleInputChange('participants', e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="window-footer">
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+          请确保录音文件来源合法，符合相关法律法规要求
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="btn btn-primary btn-lg"
+            onClick={handleSubmit}
+            disabled={!canProceed}
+          >
+            进入声纹分轨
+            <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
