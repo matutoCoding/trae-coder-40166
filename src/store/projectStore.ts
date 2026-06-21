@@ -67,6 +67,25 @@ const initialState: ProjectState = {
   audioUrl: null
 }
 
+function pickState(store: ProjectStore): ProjectState {
+  return {
+    caseInfo: store.caseInfo,
+    recordingFile: store.recordingFile,
+    speakers: store.speakers,
+    segments: store.segments,
+    currentStep: store.currentStep,
+    audioUrl: store.audioUrl
+  }
+}
+
+function broadcastState(store: ProjectStore) {
+  if (!store._hydrating && window.electronAPI) {
+    try {
+      window.electronAPI.setState('project', pickState(store))
+    } catch {}
+  }
+}
+
 function generateSpeakersAndSegments(duration: number): { speakers: Speaker[]; segments: TranscriptionSegment[] } {
   const speakerCount = Math.min(4, Math.max(2, Math.floor(duration / 180) + 2))
   const defaultNames = ['主持人', '当事人甲', '当事人乙', '代理人丙', '证人丁', '律师戊']
@@ -118,7 +137,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   _hydrating: false,
 
   hydrateFromShared: (state) => {
-    set({ ...state } as Partial<ProjectStore>)
+    set({
+      caseInfo: state.caseInfo ?? null,
+      recordingFile: state.recordingFile ?? null,
+      speakers: state.speakers ?? [],
+      segments: state.segments ?? [],
+      currentStep: state.currentStep ?? 'import',
+      audioUrl: state.audioUrl ?? null
+    })
   },
 
   setHydratingFlag: (val) => {
@@ -131,37 +157,37 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       segments: [],
       audioUrl: null
     })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   setCaseInfo: (info) => {
     set({ caseInfo: info })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   setRecordingFile: (file) => {
     set({ recordingFile: file })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   setSpeakers: (speakers) => {
     set({ speakers })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   setSegments: (segments) => {
     set({ segments })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   setCurrentStep: (step) => {
     set({ currentStep: step })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   setAudioUrl: (url) => {
     set({ audioUrl: url })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   addSpeaker: (name, role) => {
@@ -170,25 +196,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const newSpeaker: Speaker = { id: generateId(), name, role, color }
     const next = [...speakers, newSpeaker]
     set({ speakers: next })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   updateSpeaker: (id, updates) => {
     const next = get().speakers.map(s => s.id === id ? { ...s, ...updates } : s)
     set({ speakers: next })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   removeSpeaker: (id) => {
     const next = get().speakers.filter(s => s.id !== id)
     set({ speakers: next })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   updateSegment: (id, updates) => {
     const next = get().segments.map(s => s.id === id ? { ...s, ...updates } : s)
     set({ segments: next })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   toggleSegmentReview: (id) => {
@@ -196,7 +222,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       s.id === id ? { ...s, needsReview: !s.needsReview } : s
     )
     set({ segments: next })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   addSegmentNote: (id, note, noteType) => {
@@ -204,7 +230,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       s.id === id ? { ...s, note, noteType } : s
     )
     set({ segments: next })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   removeSegmentNote: (id) => {
@@ -212,7 +238,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       s.id === id ? { ...s, note: undefined, noteType: undefined } : s
     )
     set({ segments: next })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   generateMockTranscription: async () => {
@@ -247,7 +273,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       segments,
       audioUrl
     })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   loadMockData: async () => {
@@ -298,11 +324,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       currentStep: 'review',
       audioUrl
     })
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   },
 
   resetProject: () => {
     set(initialState)
-    if (!get()._hydrating) window.electronAPI?.setState('project', get())
+    broadcastState(get())
   }
 }))
