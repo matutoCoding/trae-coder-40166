@@ -1,12 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import ImportWindow from './pages/ImportWindow'
 import DiarizationWindow from './pages/DiarizationWindow'
 import ReviewWindow from './pages/ReviewWindow'
 import { useProjectStore } from './store/projectStore'
+import type { ProjectState } from '@shared/types'
 
 function App() {
   const [route, setRoute] = useState<string>('import')
+  const hydrateFromShared = useProjectStore(state => state.hydrateFromShared)
   const loadMockData = useProjectStore(state => state.loadMockData)
+  const _hydrating = useProjectStore(state => state._hydrating)
+  const setHydrating = useProjectStore.setState
 
   useEffect(() => {
     const hash = window.location.hash.replace('#/', '') || 'import'
@@ -21,11 +25,43 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const state = window.electronAPI?.getState()
-    if (state?.store) {
-      // Hydrate store from IPC state if available
+    if (typeof window === 'undefined' || !window.electronAPI) return
+
+    const existingState = window.electronAPI.getState()
+    if (existingState && existingState.project) {
+      setHydrating({ _hydrating: true })
+      hydrateFromShared(existingState.project as Partial<ProjectState>)
     }
-  }, [])
+
+    const cleanup = window.electronAPI.onStateUpdated((state) => {
+      if (state && state.project) {
+        const currentStore = useProjectStore.getState()
+        const incoming = state.project as ProjectState
+        const currentSig = JSON.stringify({
+          ci: currentStore.caseInfo,
+          sp: currentStore.speakers,
+          sg: currentStore.segments,
+          rf: currentStore.recordingFile,
+          au: currentStore.audioUrl,
+          cs: currentStore.currentStep
+        })
+        const incomingSig = JSON.stringify({
+          ci: incoming.caseInfo,
+          sp: incoming.speakers,
+          sg: incoming.segments,
+          rf: incoming.recordingFile,
+          au: incoming.audioUrl,
+          cs: incoming.currentStep
+        })
+        if (currentSig !== incomingSig) {
+          setHydrating({ _hydrating: true })
+          hydrateFromShared(state.project as Partial<ProjectState>)
+        }
+      }
+    })
+
+    return cleanup
+  }, [hydrateFromShared, setHydrating])
 
   const renderPage = () => {
     switch (route) {

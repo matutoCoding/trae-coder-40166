@@ -52,17 +52,13 @@ export async function exportRecordPackage(data: ExportData): Promise<void> {
 ${escapeHtml(json)}
 </script>`)
 
-  const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = result.filePath.split(/[\\/]/).pop() || '会议记录.html'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const writeResult = await window.electronAPI.writeFile(result.filePath, fullHtml, 'utf8')
 
-  alert(`会议记录已成功导出！\n\n文件：${result.filePath}\n包含内容：\n  · 封面页（案件信息）\n  · 音频索引（共 ${segments.length} 条）\n  · 发言转写正文\n  · ${segments.filter(s => s.note).length} 条审阅备注\n  · 签名确认页`)
+  if (!writeResult.success) {
+    throw new Error(writeResult.error || '文件写入失败')
+  }
+
+  alert(`会议记录已成功导出！\n\n保存位置：${result.filePath}\n\n包含内容：\n  · 封面页（案件信息）\n  · 音频索引（共 ${segments.length} 条）\n  · 发言转写正文\n  · ${segments.filter(s => s.note).length} 条审阅备注\n  · 签名确认页`)
 }
 
 function paginateSegments(segments: TranscriptionSegment[]) {

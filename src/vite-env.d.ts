@@ -21,9 +21,12 @@ declare global {
       }>
       setState: (key: string, value: unknown) => void
       getState: () => Record<string, unknown>
-      onStateUpdated: (callback: (state: Record<string, unknown>) => void) => void
+      onStateUpdated: (callback: (state: Record<string, unknown>) => void) => () => void
       openWindow: (name: string) => void
       closeWindow: (name: string) => void
+      writeFile: (filePath: string, content: string, encoding?: BufferEncoding) => Promise<{ success: boolean; error?: string }>
+      getAudioDuration: (filePath: string) => Promise<{ success: boolean; duration: number; size: number; error?: string }>
+      pathToAudioUrl: (filePath: string) => Promise<string>
     }
   }
 }

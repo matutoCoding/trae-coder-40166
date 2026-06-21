@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Play, Square, ArrowLeft, Download, FileText,
   StickyNote, AlertTriangle, Check, X, MessageSquare,
@@ -20,8 +20,8 @@ const noteTypeIcons: Record<NoteType, typeof StickyNote> = {
 
 export default function ReviewWindow() {
   const {
-    caseInfo, recordingFile, speakers, segments, setCurrentStep,
-    addSegmentNote, removeSegmentNote, toggleSegmentReview, updateSegment
+    caseInfo, recordingFile, speakers, segments, audioUrl, setCurrentStep,
+    addSegmentNote, removeSegmentNote, toggleSegmentReview
   } = useProjectStore()
 
   const [activeNoteSegment, setActiveNoteSegment] = useState<string | null>(null)
@@ -33,6 +33,33 @@ export default function ReviewWindow() {
   const [showNeedReviewOnly, setShowNeedReviewOnly] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const playEndTimeoutRef = useRef<number | null>(null)
+
+  const stopPlayback = () => {
+    if (playEndTimeoutRef.current) {
+      clearTimeout(playEndTimeoutRef.current)
+      playEndTimeoutRef.current = null
+    }
+    if (audioRef.current) {
+      audioRef.current.pause()
+    }
+    setPlayingId(null)
+  }
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    return () => { stopPlayback() }
+  }, [])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !audioUrl) return
+    if (audio.src !== audioUrl) {
+      audio.src = audioUrl
+      audio.load()
+    }
+  }, [audioUrl])
 
   const getSpeakerById = (id: string) => speakers.find(s => s.id === id)
 
@@ -57,20 +84,43 @@ export default function ReviewWindow() {
 
   const handlePlaySegment = (segmentId: string) => {
     const segment = segments.find(s => s.id === segmentId)
-    if (!segment) return
+    if (!segment || !audioRef.current) return
 
     if (playingId === segmentId) {
-      audioRef.current?.pause()
-      setPlayingId(null)
+      stopPlayback()
       return
     }
 
-    setPlayingId(segmentId)
-    if (audioRef.current) {
-      audioRef.current.currentTime = segment.startTime
-      try { audioRef.current.play() } catch { /* ignore */ }
+    stopPlayback()
+
+    if (!audioRef.current.src && audioUrl) {
+      audioRef.current.src = audioUrl
     }
-    setTimeout(() => setPlayingId(null), Math.min((segment.endTime - segment.startTime) * 1000, 10000))
+
+    setPlayingId(segmentId)
+    const audio = audioRef.current
+
+    const startPlayback = () => {
+      try {
+        audio.currentTime = segment.startTime
+        const playPromise = audio.play()
+        if (playPromise && typeof playPromise.then === 'function') {
+          playPromise.catch(() => {})
+        }
+      } catch {
+        // ignore
+      }
+      const duration = (segment.endTime - segment.startTime) * 1000
+      playEndTimeoutRef.current = window.setTimeout(() => {
+        stopPlayback()
+      }, Math.min(duration + 200, 30000))
+    }
+
+    if (audio.readyState >= 1 || audioUrl) {
+      startPlayback()
+    } else {
+      audio.addEventListener('loadedmetadata', startPlayback, { once: true })
+    }
   }
 
   const handleSaveNote = (segmentId: string) => {
@@ -349,15 +399,19 @@ export default function ReviewWindow() {
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                           <button
                             onClick={() => handlePlaySegment(segment.id)}
+                            disabled={!audioUrl}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 4,
                               padding: '4px 10px',
                               borderRadius: 4,
                               fontSize: 12,
-                              background: isPlaying ? 'var(--primary)' : '#f1f5f9',
-                              color: isPlaying ? 'white' : 'var(--text)',
-                              fontWeight: 500
+                              background: !audioUrl ? '#e2e8f0' : (isPlaying ? 'var(--primary)' : '#f1f5f9'),
+                              color: !audioUrl ? '#94a3b8' : (isPlaying ? 'white' : 'var(--text)'),
+                              fontWeight: 500,
+                              cursor: !audioUrl ? 'not-allowed' : 'pointer',
+                              opacity: !audioUrl ? 0.6 : 1
                             }}
+                            title={!audioUrl ? '音频未就绪' : (isPlaying ? '暂停' : '播放')}
                           >
                             {isPlaying ? <Square size={12} /> : <Play size={12} />}
                             {isPlaying ? '暂停' : '播放'}
@@ -503,7 +557,7 @@ export default function ReviewWindow() {
         <button className="btn btn-secondary" onClick={handleBack}>
           <ArrowLeft size={14} /> 返回声纹分轨
         </button>
-        <audio ref={audioRef} />
+        <audio ref={audioRef} preload="auto" />
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             className="btn btn-success btn-lg"

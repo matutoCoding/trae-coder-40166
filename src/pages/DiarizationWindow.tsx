@@ -10,7 +10,7 @@ import { formatTime } from '@shared/utils'
 
 export default function DiarizationWindow() {
   const {
-    caseInfo, recordingFile, speakers, segments, setCurrentStep,
+    caseInfo, recordingFile, speakers, segments, audioUrl, setCurrentStep,
     addSpeaker, updateSpeaker, removeSpeaker, updateSegment, toggleSegmentReview
   } = useProjectStore()
 
@@ -22,6 +22,7 @@ export default function DiarizationWindow() {
   const [currentTime, setCurrentTime] = useState(0)
   const [selectedSpeakerFilter, setSelectedSpeakerFilter] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const playEndTimeoutRef = useRef<number | null>(null)
 
   const totalDuration = segments.length > 0
     ? Math.max(...segments.map(s => s.endTime))
@@ -41,29 +42,58 @@ export default function DiarizationWindow() {
     setShowAddSpeaker(false)
   }
 
+  const stopPlayback = () => {
+    if (playEndTimeoutRef.current) {
+      clearTimeout(playEndTimeoutRef.current)
+      playEndTimeoutRef.current = null
+    }
+    if (audioRef.current) {
+      audioRef.current.pause()
+    }
+    setPlayingId(null)
+  }
+
   const handlePlaySegment = (segmentId: string) => {
     const segment = segments.find(s => s.id === segmentId)
     if (!segment || !audioRef.current) return
 
     if (playingId === segmentId) {
-      audioRef.current.pause()
-      setPlayingId(null)
+      stopPlayback()
       return
     }
 
-    setPlayingId(segmentId)
-    audioRef.current.currentTime = segment.startTime
-    setCurrentTime(segment.startTime)
+    stopPlayback()
 
-    try {
-      audioRef.current.play()
-    } catch {
-      // Mock playback
+    if (!audioRef.current.src && audioUrl) {
+      audioRef.current.src = audioUrl
     }
 
-    setTimeout(() => {
-      setPlayingId(null)
-    }, Math.min((segment.endTime - segment.startTime) * 1000, 10000))
+    setPlayingId(segmentId)
+    const audio = audioRef.current
+
+    const startPlayback = () => {
+      try {
+        audio.currentTime = segment.startTime
+        setCurrentTime(segment.startTime)
+        const playPromise = audio.play()
+        if (playPromise && typeof playPromise.then === 'function') {
+          playPromise.catch(() => {})
+        }
+      } catch {
+        // ignore
+      }
+
+      const duration = (segment.endTime - segment.startTime) * 1000
+      playEndTimeoutRef.current = window.setTimeout(() => {
+        stopPlayback()
+      }, Math.min(duration + 200, 30000))
+    }
+
+    if (audio.readyState >= 1 || audioUrl) {
+      startPlayback()
+    } else {
+      audio.addEventListener('loadedmetadata', startPlayback, { once: true })
+    }
   }
 
   const handleBack = () => {
@@ -84,12 +114,26 @@ export default function DiarizationWindow() {
   const needReviewSegments = segments.filter(s => s.needsReview)
 
   useEffect(() => {
-    if (!audioRef.current) return
     const audio = audioRef.current
+    if (!audio) return
+
     const updateTime = () => setCurrentTime(audio.currentTime)
     audio.addEventListener('timeupdate', updateTime)
-    return () => audio.removeEventListener('timeupdate', updateTime)
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime)
+      stopPlayback()
+    }
   }, [])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !audioUrl) return
+    if (audio.src !== audioUrl) {
+      audio.src = audioUrl
+      audio.load()
+    }
+  }, [audioUrl])
 
   return (
     <div className="window-container">
@@ -125,7 +169,7 @@ export default function DiarizationWindow() {
       </div>
 
       <div className="window-content" style={{ padding: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '16px 24px', background: 'white', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 24 }}>
+        <div style={{ padding: '16px 24px', background: 'white', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Users size={18} style={{ color: 'var(--text-secondary)' }} />
             <span style={{ fontSize: 13, fontWeight: 500 }}>已识别 {speakers.length} 位发言人</span>
@@ -138,6 +182,12 @@ export default function DiarizationWindow() {
             <Volume2 size={18} style={{ color: 'var(--text-secondary)' }} />
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>共 {segments.length} 条语音片段</span>
           </div>
+          {audioUrl && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: '#dcfce7', borderRadius: 4 }}>
+              <Play size={14} style={{ color: '#166534' }} />
+              <span style={{ fontSize: 12, color: '#166534', fontWeight: 500 }}>音频已就绪</span>
+            </div>
+          )}
           {overlapSegments.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: '#ffedd5', borderRadius: 4 }}>
               <AlertTriangle size={14} style={{ color: '#9a3412' }} />
@@ -302,6 +352,11 @@ export default function DiarizationWindow() {
                   <span className="badge badge-review">需人工复听</span>
                   <span style={{ color: 'var(--text-muted)' }}>点击切换标记</span>
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    播放时长 {formatTime(currentTime)} / {formatTime(totalDuration)}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -312,7 +367,7 @@ export default function DiarizationWindow() {
                 <Volume2 size={48} className="empty-state-icon" />
                 <div className="empty-state-title">暂无转写数据</div>
                 <div className="empty-state-desc">
-                  请先在「录音导入」中导入录音文件，或点击右下角「加载演示数据」查看示例
+                  请先在「录音导入」中导入录音文件，系统将自动生成声纹分轨和转写
                 </div>
               </div>
             ) : (
@@ -341,18 +396,21 @@ export default function DiarizationWindow() {
                     >
                       <button
                         onClick={() => handlePlaySegment(segment.id)}
+                        disabled={!audioUrl}
                         style={{
                           width: 36, height: 36,
                           borderRadius: '50%',
-                          background: speaker?.color || 'var(--primary)',
+                          background: !audioUrl ? '#94a3b8' : (speaker?.color || 'var(--primary)'),
                           color: 'white',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           flexShrink: 0,
-                          transition: 'all 0.2s'
+                          transition: 'all 0.2s',
+                          cursor: !audioUrl ? 'not-allowed' : 'pointer',
+                          opacity: !audioUrl ? 0.5 : 1
                         }}
-                        title={isPlaying ? '暂停' : '播放'}
+                        title={!audioUrl ? '音频未就绪' : (isPlaying ? '暂停' : `播放 ${formatTime(segment.startTime)} - ${formatTime(segment.endTime)}`)}
                       >
                         {isPlaying ? <Square size={14} /> : <Play size={14} style={{ marginLeft: 2 }} />}
                       </button>
@@ -452,7 +510,7 @@ export default function DiarizationWindow() {
             <ArrowLeft size={14} /> 返回录音导入
           </button>
         </div>
-        <audio ref={audioRef} />
+        <audio ref={audioRef} preload="auto" />
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-primary btn-lg" onClick={handleNext}>
             进入审阅封存 <ArrowRight size={16} />

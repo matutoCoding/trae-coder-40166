@@ -7,8 +7,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setState: (key: string, value: unknown) => ipcRenderer.send('state:set', key, value),
   getState: () => ipcRenderer.sendSync('state:get'),
   onStateUpdated: (callback: (state: Record<string, unknown>) => void) => {
-    ipcRenderer.on('state:updated', (_e, state) => callback(state))
+    const listener = (_e: Electron.IpcRendererEvent, state: Record<string, unknown>) => callback(state)
+    ipcRenderer.on('state:updated', listener)
+    return () => ipcRenderer.removeListener('state:updated', listener)
   },
   openWindow: (name: string) => ipcRenderer.send('window:open', name),
-  closeWindow: (name: string) => ipcRenderer.send('window:close', name)
+  closeWindow: (name: string) => ipcRenderer.send('window:close', name),
+  writeFile: (filePath: string, content: string, encoding?: BufferEncoding) =>
+    ipcRenderer.invoke('fs:writeFile', filePath, content, encoding),
+  getAudioDuration: (filePath: string) => ipcRenderer.invoke('fs:getAudioDuration', filePath),
+  pathToAudioUrl: (filePath: string) => ipcRenderer.invoke('fs:pathToAudioUrl', filePath)
 })

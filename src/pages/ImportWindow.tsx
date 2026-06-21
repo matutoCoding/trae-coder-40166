@@ -1,13 +1,17 @@
 import { useState } from 'react'
-import { Upload, FileAudio, ArrowRight, Info, CheckCircle } from 'lucide-react'
+import { Upload, FileAudio, ArrowRight, Info, CheckCircle, Loader2 } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import type { CaseInfo, RecordingFile } from '@shared/types'
 import { RECORDING_TYPE_LABELS } from '@shared/types'
 import { formatFileSize } from '@shared/utils'
 
 export default function ImportWindow() {
-  const { caseInfo, recordingFile, setCaseInfo, setRecordingFile, setCurrentStep } = useProjectStore()
+  const {
+    caseInfo, recordingFile, setCaseInfo, setRecordingFile, setCurrentStep,
+    generateMockTranscription
+  } = useProjectStore()
   const [dragActive, setDragActive] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [formData, setFormData] = useState<CaseInfo>(caseInfo || {
     caseNumber: '',
     caseName: '',
@@ -26,8 +30,8 @@ export default function ImportWindow() {
       const file: RecordingFile = {
         path: filePath,
         name: fileName,
-        size: 45 * 1024 * 1024,
-        duration: 3600,
+        size: 0,
+        duration: 300,
         format: ext
       }
       setRecordingFile(file)
@@ -57,7 +61,7 @@ export default function ImportWindow() {
           path: (file as unknown as { path?: string }).path || file.name,
           name: file.name,
           size: file.size,
-          duration: 3600,
+          duration: 300,
           format: ext
         }
         setRecordingFile(recording)
@@ -65,7 +69,7 @@ export default function ImportWindow() {
     }
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!recordingFile) {
       alert('请先导入录音文件')
       return
@@ -74,16 +78,25 @@ export default function ImportWindow() {
       alert('请填写案件名称')
       return
     }
-    setCaseInfo(formData)
-    setCurrentStep('diarization')
-    window.electronAPI.openWindow('diarization')
+
+    setIsProcessing(true)
+    try {
+      setCaseInfo(formData)
+      if (useProjectStore.getState().segments.length === 0) {
+        await generateMockTranscription()
+      }
+      setCurrentStep('diarization')
+      window.electronAPI.openWindow('diarization')
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   const handleInputChange = (field: keyof CaseInfo, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
-  const canProceed = recordingFile && formData.caseName.trim()
+  const canProceed = recordingFile && formData.caseName.trim() && !isProcessing
 
   return (
     <div className="window-container">
@@ -174,7 +187,7 @@ export default function ImportWindow() {
                       {recordingFile.name}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 16 }}>
-                      <span>{formatFileSize(recordingFile.size)}</span>
+                      <span>{recordingFile.size > 0 ? formatFileSize(recordingFile.size) : '读取中...'}</span>
                       <span>{recordingFile.format.toUpperCase()}</span>
                       <CheckCircle size={14} style={{ color: '#166534' }} />
                       <span style={{ color: '#166534' }}>已导入</span>
@@ -197,7 +210,7 @@ export default function ImportWindow() {
                     <ul style={{ paddingLeft: 18, margin: 0 }}>
                       <li>建议使用 16kHz 以上采样率的单声道或双声道音频</li>
                       <li>文件大小建议不超过 500MB，时长建议 4 小时以内</li>
-                      <li>请勿使用经过压缩或降噪处理的录音，以保证声纹识别准确性</li>
+                      <li>导入后系统将自动进行声纹识别和初步转写</li>
                     </ul>
                   </div>
                 </div>
@@ -294,8 +307,17 @@ export default function ImportWindow() {
             onClick={handleSubmit}
             disabled={!canProceed}
           >
-            进入声纹分轨
-            <ArrowRight size={16} />
+            {isProcessing ? (
+              <>
+                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                正在识别声纹...
+              </>
+            ) : (
+              <>
+                进入声纹分轨
+                <ArrowRight size={16} />
+              </>
+            )}
           </button>
         </div>
       </div>
