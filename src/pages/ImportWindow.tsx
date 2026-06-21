@@ -8,7 +8,7 @@ import { formatFileSize } from '@shared/utils'
 export default function ImportWindow() {
   const {
     caseInfo, recordingFile, setCaseInfo, setRecordingFile, setCurrentStep,
-    generateMockTranscription
+    generateMockTranscription, clearRecordingData
   } = useProjectStore()
   const [dragActive, setDragActive] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -34,6 +34,7 @@ export default function ImportWindow() {
         duration: 300,
         format: ext
       }
+      clearRecordingData()
       setRecordingFile(file)
     }
   }
@@ -64,6 +65,7 @@ export default function ImportWindow() {
           duration: 300,
           format: ext
         }
+        clearRecordingData()
         setRecordingFile(recording)
       }
     }

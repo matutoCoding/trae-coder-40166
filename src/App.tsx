@@ -9,8 +9,20 @@ function App() {
   const [route, setRoute] = useState<string>('import')
   const hydrateFromShared = useProjectStore(state => state.hydrateFromShared)
   const loadMockData = useProjectStore(state => state.loadMockData)
-  const _hydrating = useProjectStore(state => state._hydrating)
-  const setHydrating = useProjectStore.setState
+  const setHydratingFlag = useProjectStore(state => state.setHydratingFlag)
+  const hydrateTimeoutRef = useRef<number | null>(null)
+
+  const applyState = (projectState: Partial<ProjectState>) => {
+    setHydratingFlag(true)
+    hydrateFromShared(projectState)
+    if (hydrateTimeoutRef.current) {
+      clearTimeout(hydrateTimeoutRef.current)
+    }
+    hydrateTimeoutRef.current = window.setTimeout(() => {
+      setHydratingFlag(false)
+      hydrateTimeoutRef.current = null
+    }, 150)
+  }
 
   useEffect(() => {
     const hash = window.location.hash.replace('#/', '') || 'import'
@@ -29,8 +41,7 @@ function App() {
 
     const existingState = window.electronAPI.getState()
     if (existingState && existingState.project) {
-      setHydrating({ _hydrating: true })
-      hydrateFromShared(existingState.project as Partial<ProjectState>)
+      applyState(existingState.project as Partial<ProjectState>)
     }
 
     const cleanup = window.electronAPI.onStateUpdated((state) => {
@@ -54,14 +65,18 @@ function App() {
           cs: incoming.currentStep
         })
         if (currentSig !== incomingSig) {
-          setHydrating({ _hydrating: true })
-          hydrateFromShared(state.project as Partial<ProjectState>)
+          applyState(state.project as Partial<ProjectState>)
         }
       }
     })
 
-    return cleanup
-  }, [hydrateFromShared, setHydrating])
+    return () => {
+      cleanup()
+      if (hydrateTimeoutRef.current) {
+        clearTimeout(hydrateTimeoutRef.current)
+      }
+    }
+  }, [hydrateFromShared, setHydratingFlag])
 
   const renderPage = () => {
     switch (route) {

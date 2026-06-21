@@ -22,7 +22,10 @@ export default function DiarizationWindow() {
   const [currentTime, setCurrentTime] = useState(0)
   const [selectedSpeakerFilter, setSelectedSpeakerFilter] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const playEndTimeRef = useRef<number | null>(null)
   const playEndTimeoutRef = useRef<number | null>(null)
+  const timeupdateHandlerRef = useRef<(() => void) | null>(null)
+  const pendingStartRef = useRef<{ segmentId: string; startTime: number; endTime: number } | null>(null)
 
   const totalDuration = segments.length > 0
     ? Math.max(...segments.map(s => s.endTime))
@@ -47,8 +50,14 @@ export default function DiarizationWindow() {
       clearTimeout(playEndTimeoutRef.current)
       playEndTimeoutRef.current = null
     }
+    if (timeupdateHandlerRef.current && audioRef.current) {
+      audioRef.current.removeEventListener('timeupdate', timeupdateHandlerRef.current)
+      timeupdateHandlerRef.current = null
+    }
+    playEndTimeRef.current = null
+    pendingStartRef.current = null
     if (audioRef.current) {
-      audioRef.current.pause()
+      try { audioRef.current.pause() } catch {}
     }
     setPlayingId(null)
   }
@@ -64,35 +73,60 @@ export default function DiarizationWindow() {
 
     stopPlayback()
 
-    if (!audioRef.current.src && audioUrl) {
-      audioRef.current.src = audioUrl
+    const audio = audioRef.current
+
+    if (!audio.src && audioUrl) {
+      audio.src = audioUrl
+    } else if (audioUrl && audio.src !== audioUrl) {
+      audio.src = audioUrl
     }
 
     setPlayingId(segmentId)
-    const audio = audioRef.current
+    playEndTimeRef.current = segment.endTime
 
-    const startPlayback = () => {
+    const doPlay = () => {
       try {
         audio.currentTime = segment.startTime
         setCurrentTime(segment.startTime)
-        const playPromise = audio.play()
-        if (playPromise && typeof playPromise.then === 'function') {
-          playPromise.catch(() => {})
+        const p = audio.play()
+        if (p && typeof p.then === 'function') {
+          p.catch(() => {})
         }
       } catch {
         // ignore
       }
-
-      const duration = (segment.endTime - segment.startTime) * 1000
-      playEndTimeoutRef.current = window.setTimeout(() => {
-        stopPlayback()
-      }, Math.min(duration + 200, 30000))
     }
 
-    if (audio.readyState >= 1 || audioUrl) {
-      startPlayback()
+    const onTimeUpdate = () => {
+      if (playEndTimeRef.current != null && audioRef.current) {
+        if (audioRef.current.currentTime >= playEndTimeRef.current - 0.05) {
+          stopPlayback()
+        }
+      }
+    }
+
+    const durationMs = (segment.endTime - segment.startTime) * 1000
+    playEndTimeoutRef.current = window.setTimeout(() => {
+      stopPlayback()
+    }, Math.min(durationMs + 1000, 35000))
+
+    timeupdateHandlerRef.current = onTimeUpdate
+    audio.addEventListener('timeupdate', onTimeUpdate)
+
+    if (audio.readyState >= 2) {
+      doPlay()
     } else {
-      audio.addEventListener('loadedmetadata', startPlayback, { once: true })
+      pendingStartRef.current = { segmentId, startTime: segment.startTime, endTime: segment.endTime }
+      const onLoaded = () => {
+        if (pendingStartRef.current && pendingStartRef.current.segmentId === segmentId) {
+          doPlay()
+        }
+      }
+      audio.addEventListener('loadedmetadata', onLoaded, { once: true })
+      audio.addEventListener('canplay', onLoaded, { once: true })
+      if (!audio.src) {
+        audio.load()
+      }
     }
   }
 

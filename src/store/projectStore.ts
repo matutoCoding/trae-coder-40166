@@ -53,6 +53,8 @@ interface ProjectStore extends ProjectState {
   resetProject: () => void
   hydrateFromShared: (state: Partial<ProjectState>) => void
   generateMockTranscription: () => Promise<void>
+  clearRecordingData: () => void
+  setHydratingFlag: (val: boolean) => void
   _hydrating: boolean
 }
 
@@ -116,7 +118,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   _hydrating: false,
 
   hydrateFromShared: (state) => {
-    set({ ...state, _hydrating: false } as Partial<ProjectStore>)
+    set({ ...state } as Partial<ProjectStore>)
+  },
+
+  setHydratingFlag: (val) => {
+    set({ _hydrating: val } as Partial<ProjectStore>)
+  },
+
+  clearRecordingData: () => {
+    set({
+      speakers: [],
+      segments: [],
+      audioUrl: null
+    })
+    if (!get()._hydrating) window.electronAPI?.setState('project', get())
   },
 
   setCaseInfo: (info) => {
