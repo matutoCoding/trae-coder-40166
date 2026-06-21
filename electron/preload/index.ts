@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electronAPI', {
   openAudioDialog: () => ipcRenderer.invoke('dialog:openAudio'),
   openFolderDialog: () => ipcRenderer.invoke('dialog:openFolder'),
+  showOpenFileDialog: (options: { title?: string; filters?: { name: string; extensions: string[] }[] }) =>
+    ipcRenderer.invoke('dialog:openFile', options),
   showSaveDialog: (options: Electron.SaveDialogOptions) => ipcRenderer.invoke('dialog:save', options),
   setState: (key: string, value: unknown) => ipcRenderer.send('state:set', key, value),
   getState: () => ipcRenderer.sendSync('state:get'),
@@ -15,6 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeWindow: (name: string) => ipcRenderer.send('window:close', name),
   writeFile: (filePath: string, content: string, encoding?: BufferEncoding) =>
     ipcRenderer.invoke('fs:writeFile', filePath, content, encoding),
+  readFile: (filePath: string, encoding?: BufferEncoding) =>
+    ipcRenderer.invoke('fs:readFile', filePath, encoding),
   getAudioDuration: (filePath: string) => ipcRenderer.invoke('fs:getAudioDuration', filePath),
   pathToAudioUrl: (filePath: string) => ipcRenderer.invoke('fs:pathToAudioUrl', filePath)
 })

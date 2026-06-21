@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Play, Square, ArrowLeft, Download, FileText,
   StickyNote, AlertTriangle, Check, X, MessageSquare,
-  Scale, FileSignature, BookOpen
+  Scale, FileSignature, BookOpen, ChevronUp, ChevronDown,
+  SkipForward, Layers
 } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import type { NoteType } from '@shared/types'
@@ -31,7 +32,11 @@ export default function ReviewWindow() {
   const [filterNoteType, setFilterNoteType] = useState<NoteType | null>(null)
   const [filterSpeaker, setFilterSpeaker] = useState<string | null>(null)
   const [showNeedReviewOnly, setShowNeedReviewOnly] = useState(false)
+  const [showOverlapOnly, setShowOverlapOnly] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [reviewMode, setReviewMode] = useState<'all' | 'needReview' | 'overlap' | NoteType>('all')
+  const [reviewIndex, setReviewIndex] = useState(0)
+  const contentRef = useRef<HTMLDivElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playEndTimeRef = useRef<number | null>(null)
   const playEndTimeoutRef = useRef<number | null>(null)
@@ -78,10 +83,30 @@ export default function ReviewWindow() {
 
   const filteredSegments = segments.filter(seg => {
     if (filterSpeaker && seg.speakerId !== filterSpeaker) return false
-    if (filterNoteType && seg.noteType !== filterNoteType) return false
-    if (showNeedReviewOnly && !seg.needsReview) return false
+    if (reviewMode === 'needReview') return seg.needsReview
+    if (reviewMode === 'overlap') return seg.isOverlapping
+    if (reviewMode !== 'all' && seg.noteType !== reviewMode) return false
     return true
   })
+
+  const navigateToSegment = useCallback((direction: 'prev' | 'next') => {
+    if (filteredSegments.length === 0) return
+    let newIndex = direction === 'next' ? reviewIndex + 1 : reviewIndex - 1
+    if (newIndex >= filteredSegments.length) newIndex = 0
+    if (newIndex < 0) newIndex = filteredSegments.length - 1
+    setReviewIndex(newIndex)
+    const seg = filteredSegments[newIndex]
+    if (seg) {
+      const el = document.getElementById(`seg-${seg.id}`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [filteredSegments, reviewIndex])
+
+  useEffect(() => {
+    if (filteredSegments.length > 0 && reviewIndex >= filteredSegments.length) {
+      setReviewIndex(0)
+    }
+  }, [filteredSegments.length, reviewIndex])
 
   const noteCounts = {
     key_commitment: segments.filter(s => s.noteType === 'key_commitment').length,
@@ -265,14 +290,32 @@ export default function ReviewWindow() {
           </div>
 
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={showNeedReviewOnly}
-                onChange={e => setShowNeedReviewOnly(e.target.checked)}
-              />
-              仅显示需复听
-            </label>
+            {reviewMode !== 'all' && filteredSegments.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#f1f5f9', padding: '2px 4px', borderRadius: 4 }}>
+                <button
+                  onClick={() => navigateToSegment('prev')}
+                  style={{ padding: '2px 6px', background: 'white', border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                >
+                  <ChevronUp size={14} />
+                </button>
+                <span style={{ fontSize: 11, color: 'var(--text)', minWidth: 40, textAlign: 'center' }}>
+                  {reviewIndex + 1}/{filteredSegments.length}
+                </span>
+                <button
+                  onClick={() => navigateToSegment('next')}
+                  style={{ padding: '2px 6px', background: 'white', border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                >
+                  <ChevronDown size={14} />
+                </button>
+                <button
+                  onClick={() => navigateToSegment('next')}
+                  style={{ padding: '2px 6px', background: 'white', border: '1px solid var(--border)', borderRadius: 3, cursor: 'pointer', display: 'flex', alignItems: 'center', marginLeft: 2 }}
+                  title="下一条并播放"
+                >
+                  <SkipForward size={14} />
+                </button>
+              </div>
+            )}
             <select
               className="form-control"
               style={{ width: 140, padding: '5px 8px', fontSize: 12 }}
@@ -324,25 +367,46 @@ export default function ReviewWindow() {
             )}
 
             <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>按备注类型筛选</div>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Layers size={14} />
+                批量核对模式
+              </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <button
-                  className={filterNoteType === null ? 'step-item active' : 'step-item'}
+                  className={reviewMode === 'all' ? 'step-item active' : 'step-item'}
                   style={{ justifyContent: 'flex-start', padding: '6px 10px' }}
-                  onClick={() => setFilterNoteType(null)}
+                  onClick={() => { setReviewMode('all'); setReviewIndex(0) }}
                 >
                   <BookOpen size={14} />
                   <span>全部内容</span>
                   <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}>{stats.total}</span>
+                </button>
+                <button
+                  className={reviewMode === 'needReview' ? 'step-item active' : 'step-item'}
+                  style={{ justifyContent: 'flex-start', padding: '6px 10px' }}
+                  onClick={() => { setReviewMode('needReview'); setReviewIndex(0) }}
+                >
+                  <AlertTriangle size={14} style={{ color: '#d97706' }} />
+                  <span>需人工复听</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: '#d97706', fontWeight: 600 }}>{stats.needReview}</span>
+                </button>
+                <button
+                  className={reviewMode === 'overlap' ? 'step-item active' : 'step-item'}
+                  style={{ justifyContent: 'flex-start', padding: '6px 10px' }}
+                  onClick={() => { setReviewMode('overlap'); setReviewIndex(0) }}
+                >
+                  <Layers size={14} style={{ color: '#9a3412' }} />
+                  <span>重叠发言</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9a3412', fontWeight: 600 }}>{stats.overlapping}</span>
                 </button>
                 {(Object.keys(NOTE_TYPE_LABELS) as NoteType[]).map(nt => {
                   const Icon = noteTypeIcons[nt]
                   return (
                     <button
                       key={nt}
-                      className={filterNoteType === nt ? 'step-item active' : 'step-item'}
+                      className={reviewMode === nt ? 'step-item active' : 'step-item'}
                       style={{ justifyContent: 'flex-start', padding: '6px 10px' }}
-                      onClick={() => setFilterNoteType(filterNoteType === nt ? null : nt)}
+                      onClick={() => { setReviewMode(nt); setReviewIndex(0) }}
                     >
                       <Icon size={14} />
                       <span>{NOTE_TYPE_LABELS[nt]}</span>
@@ -351,6 +415,16 @@ export default function ReviewWindow() {
                   )
                 })}
               </div>
+              {reviewMode !== 'all' && filteredSegments.length > 0 && (
+                <div style={{ marginTop: 10, padding: 10, background: '#f0f9ff', borderRadius: 6, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>核对导航</div>
+                  <div>使用顶部 <ChevronUp size={10} /><ChevronDown size={10} /> 按钮逐条审阅</div>
+                  <div>处理完按 <SkipForward size={10} /> 跳下一条</div>
+                  <div style={{ marginTop: 4, color: '#2563eb', fontWeight: 500 }}>
+                    当前：第 {reviewIndex + 1} 条 / 共 {filteredSegments.length} 条
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={{ padding: 16 }}>

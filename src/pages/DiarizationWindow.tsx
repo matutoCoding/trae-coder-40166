@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   UserPlus, Pencil, Trash2, Play, Square, AlertTriangle,
-  ArrowRight, ArrowLeft, Users, Clock, Volume2
+  ArrowRight, ArrowLeft, Users, Clock, Volume2, StickyNote,
+  ChevronDown, ChevronUp
 } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import type { SpeakerRole } from '@shared/types'
-import { SPEAKER_ROLE_LABELS } from '@shared/types'
+import { SPEAKER_ROLE_LABELS, NOTE_TYPE_LABELS, NOTE_TYPE_COLORS } from '@shared/types'
 import { formatTime } from '@shared/utils'
 
 export default function DiarizationWindow() {
@@ -21,6 +22,7 @@ export default function DiarizationWindow() {
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [selectedSpeakerFilter, setSelectedSpeakerFilter] = useState<string | null>(null)
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playEndTimeRef = useRef<number | null>(null)
   const playEndTimeoutRef = useRef<number | null>(null)
@@ -506,6 +508,24 @@ export default function DiarizationWindow() {
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {segment.isOverlapping && <span className="badge badge-overlap"><AlertTriangle size={10} /> 重叠发言</span>}
+                          {segment.needsReview && <span className="badge badge-review">需人工复听</span>}
+                          {segment.note && (
+                            <button
+                              onClick={() => setExpandedNoteId(expandedNoteId === segment.id ? null : segment.id)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 4,
+                                padding: '2px 8px', borderRadius: 4, fontSize: 11,
+                                background: NOTE_TYPE_COLORS[segment.noteType || 'info'],
+                                border: '1px solid transparent',
+                                cursor: 'pointer', fontWeight: 500
+                              }}
+                            >
+                              <StickyNote size={10} />
+                              {NOTE_TYPE_LABELS[segment.noteType || 'info']}
+                              {expandedNoteId === segment.id ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                            </button>
+                          )}
                           <select
                             value={segment.speakerId}
                             onChange={(e) => updateSegment(segment.id, { speakerId: e.target.value })}
@@ -528,6 +548,20 @@ export default function DiarizationWindow() {
                             {segment.needsReview ? '取消标记' : '标记需复听'}
                           </button>
                         </div>
+                        {segment.note && expandedNoteId === segment.id && (
+                          <div style={{
+                            marginTop: 8, padding: '8px 12px', borderRadius: 6,
+                            background: NOTE_TYPE_COLORS[segment.noteType || 'info'],
+                            borderLeft: `3px solid ${segment.noteType === 'key_commitment' ? '#d97706' : segment.noteType === 'factual_statement' ? '#16a34a' : segment.noteType === 'disputed' ? '#dc2626' : segment.noteType === 'warning' ? '#ea580c' : '#2563eb'}`
+                          }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
+                              【{NOTE_TYPE_LABELS[segment.noteType || 'info']}】
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.6 }}>
+                              {segment.note}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )

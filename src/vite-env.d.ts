@@ -11,6 +11,13 @@ declare global {
         canceled: boolean
         filePaths: string[]
       }>
+      showOpenFileDialog: (options: {
+        title?: string
+        filters?: { name: string; extensions: string[] }[]
+      }) => Promise<{
+        canceled: boolean
+        filePaths: string[]
+      }>
       showSaveDialog: (options: {
         title?: string
         defaultPath?: string
@@ -25,6 +32,7 @@ declare global {
       openWindow: (name: string) => void
       closeWindow: (name: string) => void
       writeFile: (filePath: string, content: string, encoding?: BufferEncoding) => Promise<{ success: boolean; error?: string }>
+      readFile: (filePath: string, encoding?: BufferEncoding) => Promise<{ success: boolean; content?: string; error?: string }>
       getAudioDuration: (filePath: string) => Promise<{ success: boolean; duration: number; size: number; error?: string }>
       pathToAudioUrl: (filePath: string) => Promise<string>
     }

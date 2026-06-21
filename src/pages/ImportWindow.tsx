@@ -1,14 +1,14 @@
 import { useState } from 'react'
-import { Upload, FileAudio, ArrowRight, Info, CheckCircle, Loader2 } from 'lucide-react'
+import { Upload, FileAudio, ArrowRight, Info, CheckCircle, Loader2, Users, StickyNote, AlertTriangle, MessageSquare, Download, FolderOpen } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 import type { CaseInfo, RecordingFile } from '@shared/types'
 import { RECORDING_TYPE_LABELS } from '@shared/types'
-import { formatFileSize } from '@shared/utils'
+import { formatFileSize, formatTimeHMS } from '@shared/utils'
 
 export default function ImportWindow() {
   const {
-    caseInfo, recordingFile, setCaseInfo, setRecordingFile, setCurrentStep,
-    generateMockTranscription, clearRecordingData
+    caseInfo, recordingFile, speakers, segments, setCaseInfo, setRecordingFile, setCurrentStep,
+    generateMockTranscription, clearRecordingData, hydrateFromShared, setHydratingFlag
   } = useProjectStore()
   const [dragActive, setDragActive] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -20,6 +20,83 @@ export default function ImportWindow() {
     location: '',
     participants: ''
   })
+
+  const projectStats = {
+    speakers: speakers.length,
+    segments: segments.length,
+    needReview: segments.filter(s => s.needsReview).length,
+    withNotes: segments.filter(s => s.note).length,
+    totalDuration: segments.length > 0 ? Math.max(...segments.map(s => s.endTime)) : 0
+  }
+
+  const handleExportProject = async () => {
+    const state = useProjectStore.getState()
+    const projectData = {
+      caseInfo: state.caseInfo,
+      recordingFile: state.recordingFile,
+      speakers: state.speakers,
+      segments: state.segments,
+      currentStep: state.currentStep,
+      exportedAt: new Date().toISOString(),
+      version: '1.0'
+    }
+    const result = await window.electronAPI.showSaveDialog({
+      title: '导出项目数据',
+      defaultPath: `${state.caseInfo?.caseNumber || state.caseInfo?.caseName || '项目'}_数据.json`,
+      filters: [
+        { name: '项目数据', extensions: ['json'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled || !result.filePath) return
+    const writeResult = await window.electronAPI.writeFile(result.filePath, JSON.stringify(projectData, null, 2), 'utf8')
+    if (writeResult.success) {
+      alert(`项目数据已导出！\n\n保存位置：${result.filePath}`)
+    } else {
+      alert('导出失败：' + (writeResult.error || '写入文件失败'))
+    }
+  }
+
+  const handleImportProject = async () => {
+    const fileResult = await window.electronAPI.showOpenFileDialog({
+      title: '导入项目数据',
+      filters: [
+        { name: '项目数据', extensions: ['json'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    })
+    if (fileResult.canceled || !fileResult.filePaths.length) return
+    try {
+      const readResult = await window.electronAPI.readFile(fileResult.filePaths[0])
+      if (!readResult.success || !readResult.content) {
+        alert('读取文件失败：' + (readResult.error || '未知错误'))
+        return
+      }
+      const data = JSON.parse(readResult.content)
+      if (!data.caseInfo || !data.recordingFile) {
+        alert('无效的项目数据文件')
+        return
+      }
+      let audioUrl: string | null = null
+      try {
+        audioUrl = await window.electronAPI.pathToAudioUrl(data.recordingFile.path)
+      } catch { audioUrl = null }
+      setHydratingFlag(true)
+      hydrateFromShared({
+        caseInfo: data.caseInfo,
+        recordingFile: data.recordingFile,
+        speakers: data.speakers || [],
+        segments: data.segments || [],
+        currentStep: data.currentStep || 'import',
+        audioUrl
+      })
+      setTimeout(() => setHydratingFlag(false), 200)
+      setFormData(data.caseInfo)
+      alert(`项目数据已导入！\n案件：${data.caseInfo.caseName}\n转写条数：${(data.segments || []).length}`)
+    } catch (e) {
+      alert('导入失败：' + (e as Error).message)
+    }
+  }
 
   const handleFileSelect = async () => {
     const result = await window.electronAPI.openAudioDialog()
@@ -297,11 +374,79 @@ export default function ImportWindow() {
             </div>
           </div>
         </div>
+
+        {(caseInfo || segments.length > 0) && (
+          <div style={{ maxWidth: 1200, margin: '24px auto 0' }}>
+            <div className="card">
+              <div className="card-header">
+                <h2>项目概览</h2>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>当前项目数据统计</span>
+              </div>
+              <div className="card-body">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 16 }}>
+                  <div style={{ textAlign: 'center', padding: 16, background: '#f8fafc', borderRadius: 8 }}>
+                    <Users size={20} style={{ color: 'var(--primary)', marginBottom: 8 }} />
+                    <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)' }}>{projectStats.speakers}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>发言人数</div>
+                  </div>
+                  <div style={{ textAlign: 'center', padding: 16, background: '#f8fafc', borderRadius: 8 }}>
+                    <MessageSquare size={20} style={{ color: 'var(--info)', marginBottom: 8 }} />
+                    <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)' }}>{projectStats.segments}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>转写条数</div>
+                  </div>
+                  <div style={{ textAlign: 'center', padding: 16, background: '#f8fafc', borderRadius: 8 }}>
+                    <AlertTriangle size={20} style={{ color: '#d97706', marginBottom: 8 }} />
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#d97706' }}>{projectStats.needReview}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>需复听</div>
+                  </div>
+                  <div style={{ textAlign: 'center', padding: 16, background: '#f8fafc', borderRadius: 8 }}>
+                    <StickyNote size={20} style={{ color: '#2563eb', marginBottom: 8 }} />
+                    <div style={{ fontSize: 24, fontWeight: 700, color: '#2563eb' }}>{projectStats.withNotes}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>已备注</div>
+                  </div>
+                  <div style={{ textAlign: 'center', padding: 16, background: '#f8fafc', borderRadius: 8 }}>
+                    <FileAudio size={20} style={{ color: '#166534', marginBottom: 8 }} />
+                    <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', wordBreak: 'break-all' }}>
+                      {recordingFile?.name || '-'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {recordingFile ? `${formatFileSize(recordingFile.size)} · ${formatTimeHMS(projectStats.totalDuration || recordingFile.duration)}` : '录音文件'}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center', padding: 16, background: '#f8fafc', borderRadius: 8 }}>
+                    <Info size={20} style={{ color: 'var(--text-secondary)', marginBottom: 8 }} />
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', wordBreak: 'break-all' }}>
+                      {caseInfo?.caseName || '-'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {caseInfo?.caseNumber || '案件信息'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="window-footer">
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-          请确保录音文件来源合法，符合相关法律法规要求
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+            请确保录音文件来源合法，符合相关法律法规要求
+          </span>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleImportProject}
+          >
+            <FolderOpen size={12} /> 导入项目
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleExportProject}
+            disabled={!caseInfo}
+          >
+            <Download size={12} /> 导出项目
+          </button>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button

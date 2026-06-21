@@ -104,6 +104,14 @@ app.whenReady().then(() => {
     return result
   })
 
+  ipcMain.handle('dialog:openFile', async (_e, options) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      ...options
+    })
+    return result
+  })
+
   ipcMain.handle('dialog:openFolder', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory']
@@ -121,6 +129,15 @@ app.whenReady().then(() => {
       await fsPromises.mkdir(path.dirname(filePath), { recursive: true })
       await fsPromises.writeFile(filePath, content, encoding)
       return { success: true }
+    } catch (err) {
+      return { success: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle('fs:readFile', async (_e, filePath: string, encoding: BufferEncoding = 'utf8') => {
+    try {
+      const content = await fsPromises.readFile(filePath, encoding)
+      return { success: true, content }
     } catch (err) {
       return { success: false, error: (err as Error).message }
     }
